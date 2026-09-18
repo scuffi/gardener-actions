@@ -1,0 +1,29 @@
+.github/CODEOWNERS
+  s_de0b486c128948::t_4a8523cadec934 1
+LICENSE
+  s_de0b486c128948::t_aa000dd7aeffc4 1-17
+actions/effects/action.yml
+  s_de0b486c128948::t_765e2355d0eadb 1-29
+actions/effects/dist/index.cjs
+  s_de0b486c128948::t_f1026df4bbca4b 1-44586
+actions/runner/action.yml
+  s_de0b486c128948::t_65aec4dabe9b24 1-33
+actions/runner/dist/index.cjs
+  s_de0b486c128948::t_82ebbf5359fb2b 1-43412
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "71ec3e643887d8952ab780da42f406e7b234f1bb",
+  "prompts": {},
+  "sessions": {
+    "s_de0b486c128948": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0a54b-7029-705c-8802-df38dfe75e1f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "scuffi <aferguson@cloudflare.com>"
+    }
+  }
+}
