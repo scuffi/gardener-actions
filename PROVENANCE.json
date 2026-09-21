@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "gardener.actions-release-provenance/v1",
+  "sourceRepository": "https://github.com/scuffi/gardener",
+  "sourceCommit": "32b6f97dda20a51877b926efdaee788f2687cd12",
+  "artifacts": {
+    "actions/runner/dist/index.cjs": "ce37da055c896de9576b1b505ce18bdee4407f9f8d87036e5c5a7098d3b20f36",
+    "actions/effects/dist/index.cjs": "7984260c171202c911be2422450064d8679cb5d4d74c09875c39462663ab5218"
+  }
+}

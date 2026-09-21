@@ -1,0 +1,44 @@
+name: Check release artifacts
+
+on:
+  pull_request:
+  push:
+    branches: [main, release/v1.1.0-rc1]
+
+permissions:
+  contents: read
+
+jobs:
+  bundles:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - run: npm install --global pnpm@11.25.0
+      - name: Rebuild from immutable Gardener source
+        env:
+          SOURCE_SHA: 32b6f97dda20a51877b926efdaee788f2687cd12
+        run: |
+          git clone --filter=blob:none https://github.com/scuffi/gardener.git /tmp/gardener-source
+          git -C /tmp/gardener-source checkout "$SOURCE_SHA"
+          pnpm --dir /tmp/gardener-source install --frozen-lockfile
+          pnpm --dir /tmp/gardener-source --filter @gardener/runner build
+          cmp actions/runner/dist/index.cjs /tmp/gardener-source/actions/runner/dist/index.cjs
+          cmp actions/effects/dist/index.cjs /tmp/gardener-source/actions/effects/dist/index.cjs
+      - name: Validate Action entrypoints
+        run: |
+          node --check actions/runner/dist/index.cjs
+          node --check actions/effects/dist/index.cjs
+          grep -Fq 'main: dist/index.cjs' actions/runner/action.yml
+          grep -Fq 'main: dist/index.cjs' actions/effects/action.yml
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const crypto = require('node:crypto');
+          const provenance = JSON.parse(fs.readFileSync('PROVENANCE.json', 'utf8'));
+          for (const [path, expected] of Object.entries(provenance.artifacts)) {
+            const actual = crypto.createHash('sha256').update(fs.readFileSync(path)).digest('hex');
+            if (actual !== expected) throw new Error(`${path} does not match PROVENANCE.json`);
+          }
+          NODE
