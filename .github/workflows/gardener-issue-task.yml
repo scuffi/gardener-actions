@@ -38,7 +38,7 @@ jobs:
           persist-credentials: false
       - name: Run Gardener task
         id: gardener
-        uses: scuffi/gardener-actions/actions/runner@c9ad5ab78e8809fcd405fd185b3c874ebe9b3f04
+        uses: scuffi/gardener-actions/actions/runner@d6bbdbe752da07b8784861b2b87b509eb46c7610
         with:
           harness-url: ${{ inputs.harness-url }}
           task-bundle-hash: ${{ inputs.task-bundle-hash }}
@@ -68,7 +68,7 @@ jobs:
           name: gardener-effect-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/gardener-effect
       - name: Apply exact Gardener effect
-        uses: scuffi/gardener-actions/actions/effects@c9ad5ab78e8809fcd405fd185b3c874ebe9b3f04
+        uses: scuffi/gardener-actions/actions/effects@d6bbdbe752da07b8784861b2b87b509eb46c7610
         with:
           artifact-path: ${{ runner.temp }}/gardener-effect/${{ needs.plan.outputs.effect-sha256 }}.json
           expected-sha256: ${{ needs.plan.outputs.effect-sha256 }}
