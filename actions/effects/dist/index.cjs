@@ -40519,7 +40519,7 @@ var workspaceRolePermissions = Object.freeze({
   member: Object.freeze(memberPermissions),
   owner: Object.freeze(workspacePermissionValues)
 });
-var principalKindSchema = external_exports.enum(["dashboard-session", "mcp-token", "local-dev"]);
+var principalKindSchema = external_exports.enum(["dashboard-session", "cloudflare-access", "mcp-token", "local-dev"]);
 var internalUserV1Schema = external_exports.object({
   schemaVersion: external_exports.literal("v1"),
   id: id2,
@@ -41140,6 +41140,21 @@ var taskEffectKindV1Schema = external_exports.enum([
   "issue.labels.update",
   "repository.draft_pr.create"
 ]);
+var networkHostPattern = external_exports.string().regex(
+  /^(?:\*\.)?(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/,
+  "expected a lowercase DNS hostname or leading-wildcard hostname"
+);
+var taskNetworkPolicyV1Schema = external_exports.strictObject({
+  default: external_exports.enum(["deny", "allow"]),
+  allow: external_exports.array(networkHostPattern).max(64),
+  deny: external_exports.array(networkHostPattern).max(64)
+}).superRefine((policy, context) => {
+  for (const key of ["allow", "deny"]) {
+    if (new Set(policy[key]).size !== policy[key].length) {
+      context.addIssue({ code: "custom", path: [key], message: `${key} hosts must be unique` });
+    }
+  }
+});
 var taskLimitsV1Schema = external_exports.strictObject({
   runtimeSeconds: external_exports.number().int().positive().max(3600),
   maxTurns: external_exports.number().int().positive().max(32),
@@ -41156,7 +41171,7 @@ var taskBundleV1Schema = external_exports.strictObject({
   triggers: external_exports.array(taskTriggerV1Schema).min(1).max(20),
   tools: external_exports.array(taskToolV1Schema).max(taskToolV1Schema.options.length),
   effects: external_exports.array(taskEffectKindV1Schema).max(taskEffectKindV1Schema.options.length),
-  planningNetwork: external_exports.literal("unrestricted"),
+  network: taskNetworkPolicyV1Schema,
   limits: taskLimitsV1Schema
 }).superRefine((bundle, context) => {
   for (const key of ["tools", "effects"]) {
@@ -41234,6 +41249,7 @@ var taskRunRequestV1Schema = external_exports.strictObject({
   runId: boundIdentifier,
   bundle: taskBundleV1Schema,
   bundleHash: sha256,
+  sourcePath: relativePath2,
   policySnapshotHash: sha256,
   event: normalizedEventV1Schema,
   model: external_exports.strictObject({ id: external_exports.string().min(1).max(256) }),
@@ -41301,8 +41317,15 @@ var taskEffectPlanV1Schema = external_exports.strictObject({
   schemaVersion: external_exports.literal("gardener.task-effect-plan/v1"),
   runId: boundIdentifier,
   taskId: identifier2,
+  taskName: external_exports.string().trim().min(1).max(100),
   bundleHash: sha256,
   repository: external_exports.strictObject({ id: githubNumericId, fullName: repositoryFullName }),
+  provenance: external_exports.strictObject({
+    sourcePath: relativePath2,
+    commitSha: sha1,
+    workflowRunId: githubNumericId,
+    workflowRunAttempt: external_exports.number().int().positive()
+  }),
   issueNumber: external_exports.number().int().positive(),
   operationId: boundIdentifier,
   kind: external_exports.literal("issue.comment.create"),
@@ -44405,7 +44428,10 @@ var runnerEffectReceiptV1Schema = external_exports.strictObject({
   operationId: identifier3,
   kind: external_exports.literal("issue.comment.create"),
   commentId: external_exports.string().regex(/^[1-9][0-9]{0,19}$/),
-  commentUrl: external_exports.url()
+  commentUrl: external_exports.url().refine(
+    (value) => new URL(value).origin === "https://github.com",
+    "Expected an HTTPS github.com comment URL"
+  )
 });
 var runnerEffectArtifactV1Schema = external_exports.strictObject({
   schemaVersion: external_exports.literal("gardener.runner.effect-artifact/v1"),
@@ -44497,10 +44523,13 @@ async function main() {
     const event = JSON.parse(await (0, import_promises.readFile)(requiredEnvironment("GITHUB_EVENT_PATH"), "utf8"));
     if (requiredEnvironment("GITHUB_REPOSITORY") !== plan.repository.fullName) throw new Error("Effect repository binding mismatch");
     if (String(event.repository?.id ?? "") !== plan.repository.id) throw new Error("Effect repository identity mismatch");
+    if (requiredEnvironment("GITHUB_SHA") !== plan.provenance.commitSha) throw new Error("Effect commit binding mismatch");
+    if (requiredEnvironment("GITHUB_RUN_ID") !== plan.provenance.workflowRunId || Number(requiredEnvironment("GITHUB_RUN_ATTEMPT")) !== plan.provenance.workflowRunAttempt) {
+      throw new Error("Effect workflow run binding mismatch");
+    }
     if (event.action !== "opened" || Number(event.issue?.number) !== plan.issueNumber) throw new Error("Effect issue binding mismatch");
     const marker = `<!-- gardener-operation:${plan.operationId} -->`;
-    const body2 = `${plan.body}
-${marker}`;
+    const body2 = renderGardenerComment(plan, marker);
     const existing = await findExistingComment(plan.repository.fullName, plan.issueNumber, marker, token);
     const receipt = existing ?? await createComment(plan.repository.fullName, plan.issueNumber, body2, token);
     await recordReceipt(harnessUrl, plan.bundleHash, {
@@ -44543,6 +44572,33 @@ async function recordReceipt(harnessUrl, bundleHash, receipt) {
   } finally {
     root[Symbol.dispose]();
   }
+}
+function renderGardenerComment(plan, marker) {
+  const repositoryUrl = `https://github.com/${plan.repository.fullName}`;
+  const sourcePath = plan.provenance.sourcePath.split("/").map(encodeURIComponent).join("/");
+  const sourceUrl = `${repositoryUrl}/blob/${plan.provenance.commitSha}/${sourcePath}`;
+  const runUrl = `${repositoryUrl}/actions/runs/${plan.provenance.workflowRunId}/attempts/${plan.provenance.workflowRunAttempt}`;
+  const commitUrl = `${repositoryUrl}/commit/${plan.provenance.commitSha}`;
+  return [
+    `## \u{1F331} Gardener \xB7 ${escapeMarkdownInline(plan.taskName)}`,
+    "",
+    plan.body,
+    "",
+    "<details>",
+    "<summary>Gardener provenance</summary>",
+    "",
+    `[Task source](${sourceUrl}) \xB7 [Workflow run](${runUrl}) \xB7 [Commit](${commitUrl})`,
+    "",
+    `Bundle \`${plan.bundleHash}\`  `,
+    `Operation \`${plan.operationId}\``,
+    "",
+    "</details>",
+    "",
+    marker
+  ].join("\n");
+}
+function escapeMarkdownInline(value) {
+  return value.replace(/[\\`*_{}\[\]()<>#+.!|~-]/g, "\\$&");
 }
 async function findExistingComment(repository, issue3, marker, token) {
   const response = await githubFetch(`https://api.github.com/repos/${repository}/issues/${issue3}/comments?per_page=100`, token);

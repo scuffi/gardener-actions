@@ -40029,7 +40029,10 @@ var runnerEffectReceiptV1Schema = external_exports.strictObject({
   operationId: identifier,
   kind: external_exports.literal("issue.comment.create"),
   commentId: external_exports.string().regex(/^[1-9][0-9]{0,19}$/),
-  commentUrl: external_exports.url()
+  commentUrl: external_exports.url().refine(
+    (value) => new URL(value).origin === "https://github.com",
+    "Expected an HTTPS github.com comment URL"
+  )
 });
 var runnerEffectArtifactV1Schema = external_exports.strictObject({
   schemaVersion: external_exports.literal("gardener.runner.effect-artifact/v1"),
@@ -43312,8 +43315,8 @@ delete process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
 async function main() {
   try {
     const harnessUrl = requiredInput("harness-url");
-    const agentHash = requiredInput("agent-hash");
-    if (!/^[a-f0-9]{64}$/.test(agentHash)) throw new Error("agent-hash must be a lowercase SHA-256 digest");
+    const agentHash = requiredInput("task-bundle-hash");
+    if (!/^[a-f0-9]{64}$/.test(agentHash)) throw new Error("task-bundle-hash must be a lowercase SHA-256 digest");
     const maxReconnects = integerInput("max-reconnects", 5, 0, 20);
     const event = await githubEvent();
     const terminal = await runPlanningSession({
